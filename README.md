@@ -222,18 +222,24 @@ Para impedir que qualquer pessoa com acesso físico aos equipamentos possa conec
 
 #### 3. Proteção de Acesso Remoto (Linhas VTY)
 
-O acesso remoto via Telnet/SSH é protegido por senhas nas linhas virtuais (VTY). A configuração no switch requer um passo adicional para atribuir um IP de gerenciamento.
+O acesso remoto aos dispositivos foi configurado para ser realizado **exclusivamente via SSH (Secure Shell)**, desabilitando o protocolo Telnet, que é inseguro. A autenticação não usa mais uma senha de linha simples, mas sim um banco de dados de usuários locais, garantindo que apenas usuários cadastrados possam acessar.
 
-  * **Aplicado em:** Roteador e Switch.
-      * **No Roteador:** A configuração é direta, pois ele já possui IPs nas suas interfaces.
-      * **No Switch:** É necessário criar uma Interface Virtual de Switch (SVI) na VLAN de gerenciamento (VLAN 10) e definir um gateway padrão.
+* **Aplicado em:** Roteador e Switch.
+    * **No Roteador:** A configuração é direta.
+    * **No Switch:** Foi necessário criar uma Interface Virtual (SVI) na VLAN de gerenciamento (VLAN 10) e definir um gateway padrão para permitir o acesso via rede.
+* **Comandos Chave:**
+    * `username admin secret <senha-forte>`: Cria um usuário local.
+    * `transport input ssh`: Permite apenas conexões SSH.
+    * `login local`: Força a autenticação contra o banco de dados de usuários locais.
 
-#### 4. Criptografia de Senhas em Texto Plano
+#### 4. Criptografia de Senhas na Configuração
 
-Para evitar que as senhas de console e VTY fiquem visíveis nos arquivos de configuração, o serviço de criptografia de senhas é ativado em ambos os dispositivos.
+Para evitar que senhas fiquem visíveis em texto plano no arquivo de configuração, o serviço `service password-encryption` é ativado. É importante notar que este comando aplica uma criptografia fraca (Tipo 7) e afeta apenas senhas configuradas com o comando `password` (como a da porta console).
 
-  * **Aplicado em:** Roteador e Switch.
-  * **Comando:** `service password-encryption`
+As senhas mais críticas, definidas com o comando `secret` (`enable secret` e `username ... secret`), já utilizam um algoritmo de hash MD5 (Tipo 5), que é muito mais forte e não é afetado por este serviço.
+
+* **Aplicado em:** Roteador e Switch.
+* **Comando:** `service password-encryption`
 
 #### 5. Segurança Física das Portas (Switch)
 
@@ -254,16 +260,21 @@ Abaixo estão os blocos de código completos que implementam todas as medidas de
 enable
 configure terminal
 
-enable secret DevHubSwitchAdmin2025!
+hostname DevHubSwitch
+ip domain-name devhub.local
+
+enable secret DEVHUBSWITCH2025!
+
+username admin secret DEVHUB2025!
 
 line console 0
-    password consoleaccessswitch
+    password console_s
     login
 exit
 
 line vty 0 15
-    password remoteaccessswitch
-    login
+    transport input ssh
+    login local
 exit
 
 service password-encryption
@@ -273,6 +284,16 @@ interface range FastEthernet0/22-24
 exit
 
 banner motd # ACESSO RESTRITO A PESSOAL AUTORIZADO #
+
+interface Vlan10
+    description GERENCIA_DO_SWITCH
+    ip address 192.168.10.2 255.255.255.0
+    no shutdown
+exit
+
+ip default-gateway 192.168.10.1
+
+crypto key generate rsa
 
 end
 write memory
@@ -284,21 +305,28 @@ write memory
 enable
 configure terminal
 
-enable secret DevHubRouterAdmin2025!
+hostname DevHubRouter
+ip domain-name devhub.local
+
+enable secret DEVHUBROUTER2025!
+
+username admin secret DEVHUB2025!
 
 line console 0
-    password consoleaccesspass
+    password console_r
     login
 exit
 
 line vty 0 4
-    password remoteaccesspass
-    login
+    transport input ssh
+    login local
 exit
 
 service password-encryption
 
 banner motd # ACESSO RESTRITO A PESSOAL AUTORIZADO #
+
+crypto key generate rsa
 
 end
 write memory
@@ -775,11 +803,8 @@ Os testes a seguir validam se as senhas de segurança e os banners de aviso fora
 
 | Nº | Dispositivo Alvo | Método de Acesso | Ação a ser Testada | Resultado Esperado | Justificativa da Regra |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| 4.1 | Roteador & Switch | Conexão de Console | Tentar acessar o CLI. | **Sucesso**, mas para em uma tela de login que pede a senha `consoleaccesspass` ou `consoleaccessswitch`. O banner de aviso é exibido. | Confirma que o acesso físico está protegido. |
-| 4.2 | Roteador & Switch | Acesso via Console | Após o login, executar o comando `enable`. | O dispositivo solicita a senha `enable secret` (`DevHubRouterAdmin2025!` ou `DevHubSwitchAdmin2025!`). | Confirma que o acesso ao modo de configuração está protegido. |
-| 4.3 | Roteador | Acesso Remoto (Telnet) | De um PC-ADMIN (`192.168.10.10`), executar: `telnet 192.168.10.1` | **Sucesso**, mas a conexão para em uma tela de login que pede a senha `remoteaccesspass`. O banner de aviso é exibido. | Confirma que o acesso remoto ao roteador está protegido. |
-| 4.4 | Switch | Acesso Remoto (Telnet) | De um PC-ADMIN (`192.168.10.10`), executar: `telnet 192.168.10.2` | **Sucesso**, mas a conexão para em uma tela de login que pede a senha `remoteaccessswitch`. O banner de aviso é exibido. | Confirma que o acesso remoto ao switch está protegido. |
-| 4.5 | Switch | Acesso Remoto (Telnet) | De um PC-DEV (`192.168.20.10`), executar: `telnet 192.168.10.2` | **Falha** (Time out) | A ACL `DEV_SECURITY_POLICY` impede que a VLAN DEV inicie conexões com a VLAN ADMIN, o que inclui o IP de gerenciamento do switch. |
-| 4.6 | Switch | Conexão Física | Conectar um PC a uma porta desativada (ex: `FastEthernet0/23`). | O link da porta no PC e no switch permanece **desativado/sem luz**. Nenhuma conectividade é estabelecida. | Confirma que a política de desativação de portas não utilizadas está funcionando. |
-
-A execução bem-sucedida de todos os testes deste plano confirma que a rede da DevHub está segmentada, protegida e configurada de acordo com todas as políticas estabelecidas.
+| 4.1 | Roteador & Switch | Conexão de Console | Tentar acessar o CLI. | **Sucesso**, mas para em uma tela de login que pede a senha `console_r` ou `console_s`. O banner de aviso é exibido. | Confirma que o acesso físico está protegido. |
+| 4.2 | Roteador & Switch | Acesso via Console | Após o login, executar o comando `enable`. | O dispositivo solicita a senha `enable secret` (`DEVHUBROUTER2025!` ou `DEVHUBSWITCH2025!`). | Confirma que o acesso ao modo de configuração está protegido. |
+| 4.3 | Roteador | Acesso Remoto (SSH) | De um PC-ADMIN (`192.168.10.10`), executar: `ssh -l admin 192.168.10.1` e tentar `telnet 192.168.10.1` | A conexão **SSH** solicita a senha do usuário `admin` (`DEVHUB2025!`) e o acesso é **bem-sucedido**. A tentativa com **Telnet falha** (conexão recusada). | Confirma que apenas o acesso remoto seguro (SSH) está habilitado. |
+| 4.4 | Switch | Acesso Remoto (SSH) | De um PC-ADMIN (`192.168.10.10`), executar: `ssh -l admin 192.168.10.2` e tentar `telnet 192.168.10.2` | A conexão **SSH** solicita a senha do usuário `admin` (`DEVHUB2025!`) e o acesso é **bem-sucedido**. A tentativa com **Telnet falha** (conexão recusada). | Confirma que apenas o acesso remoto seguro (SSH) está habilitado. |
+| 4.5 | Switch | Acesso Remoto (SSH) | De um PC-DEV (`192.168.20.10`), executar: `ssh -l admin 192.168.10.2` | **Falha** (Time out) | A ACL `DEV_SECURITY_POLICY` impede que a VLAN DEV inicie conexões com a VLAN ADMIN, o que inclui o IP de gerenciamento do switch. |
