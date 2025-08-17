@@ -334,24 +334,25 @@ vlan 30
     name SERVER
 vlan 99
     name NATIVE_TRUNK
+exit
 ```
 
   * `vlan <ID>`: Este comando cria uma VLAN com o número de identificação especificado. Se a VLAN já existir, o comando acessa o modo de configuração dessa VLAN (indicado por `(config-vlan)#`). Neste caso, criamos as VLANs 10, 20, 30 e 99.
   * `name <NOME>`: Atribui um nome descritivo à VLAN que está sendo configurada. Isso facilita a identificação e o gerenciamento da rede (ex: "ADMIN" para a VLAN 10).
 
-#### 2. Configuração do Link com o Roteador (Trunk)
+#### 2 Configuração do Link com o Roteador (Trunk)
 
-Este bloco configura a porta `GigabitEthernet0/0` para operar como um link "trunk", permitindo que o tráfego de múltiplas VLANs passe por ela em direção ao roteador.
+Este bloco configura a porta **`GigabitEthernet0/1`** para operar como um link "trunk", permitindo que o tráfego de múltiplas VLANs passe por ela em direção ao roteador.
 
 ```bash
-interface GigabitEthernet0/0
+interface GigabitEthernet0/1
     switchport mode trunk
     switchport trunk native vlan 99
     no shutdown
 exit
 ```
 
-  * `interface GigabitEthernet0/0`: Acessa o modo de configuração específico para a interface física `GigabitEthernet0/0`.
+  * `interface GigabitEthernet0/1`: Acessa o modo de configuração específico para a interface física `GigabitEthernet0/1`.
 
   * `switchport mode trunk`: Define a porta para operar permanentemente em modo "trunk". Isso a capacita a transportar tráfego de múltiplas VLANs simultaneamente, usando o protocolo de encapsulamento 802.1Q para identificar a qual VLAN cada quadro pertence.
 
@@ -410,28 +411,7 @@ exit
 
   * A lógica é a mesma, mas aplicada a uma única porta (`FastEthernet0/21`) e associando-a à VLAN 30.
 
-#### 6. Configuração da Interface de Gerenciamento do Switch
-
-Este bloco de comandos configura o switch para ser gerenciável remotamente através da rede. Ao criar uma interface virtual (SVI) na VLAN de administração e definir um gateway, o switch ganha um endereço IP e se torna um dispositivo acessível via Telnet/SSH, permitindo que administradores configurem e monitorem o equipamento sem a necessidade de acesso físico com um cabo de console.
-
-```bash
-interface Vlan10
-    ip address 192.168.10.2 255.255.255.0
-    no shutdown
-exit
-
-ip default-gateway 192.168.10.1
-```
-
-  * `interface Vlan10`: Cria uma Interface Virtual de Switch (SVI), que é uma interface lógica que representa a VLAN 10 dentro do próprio switch. É através desta SVI que o switch pode enviar e receber tráfego IP.
-
-  * `ip address 192.168.10.2 255.255.255.0`: Atribui um endereço IP estático à SVI da VLAN 10. Este endereço torna o switch um "host" na rede de administração, permitindo que seja acessado para gerenciamento.
-
-  * `no shutdown`: Ativa administrativamente a interface virtual Vlan10.
-
-  * `ip default-gateway 192.168.10.1`: Define o gateway padrão para o switch. Como um switch Layer 2 não roteia pacotes, este comando é crucial para que ele saiba para onde enviar tráfego destinado a redes externas (por exemplo, para um administrador em outra VLAN que precise gerenciar o switch, ou para que o switch acesse um servidor NTP/Syslog).
-
-#### 7. Finalizar e Salvar a Configuração
+#### 6. Finalizar e Salvar a Configuração
 
 Para finalizar e garantir que as configurações sejam mantidas após uma reinicialização, utilize os comandos abaixo.
 
@@ -498,7 +478,7 @@ exit
 
 #### 2. Configuração do Servidor DHCP
 
-Este bloco configura o roteador para atuar como um servidor DHCP, distribuindo endereços IP automaticamente para as VLANs ADMIN e DEV. A VLAN SERVER é omitida intencionalmente, pois servidores devem ter endereços IP estáticos.
+Este bloco configura o roteador para atuar como um servidor DHCP, distribuindo endereços IP automaticamente para as VLANs ADMIN e DEV. A VLAN SERVER é omitida dos *pools* de DHCP intencionalmente, pois servidores devem ter endereços IP estáticos.
 
 ```bash
 ip dhcp excluded-address 192.168.10.1 192.168.10.9
@@ -518,7 +498,7 @@ ip dhcp pool VLAN20_DEV
 exit
 ```
 
-  * `ip dhcp excluded-address ...`: Reserva um intervalo de endereços IP, instruindo o serviço DHCP a nunca distribuí-los automaticamente. Isso é fundamental para evitar conflitos de IP com gateways, servidores e outros dispositivos de infraestrutura com IPs estáticos.
+  * `ip dhcp excluded-address ...`: Reserva um intervalo de endereços IP, instruindo o serviço DHCP a nunca distribuí-los automaticamente. Isso é fundamental para evitar conflitos de IP com gateways, servidores e outros dispositivos de infraestrutura com IPs estáticos. **Note que um intervalo também foi reservado para a VLAN 30 para garantir que os IPs dos servidores não sejam acidentalmente utilizados caso um pool seja criado no futuro.**
 
   * `ip dhcp pool VLAN10_ADMIN`: Cria um conjunto de configurações DHCP (pool) com um nome descritivo.
 
@@ -530,13 +510,12 @@ exit
 
 #### 3. Firewall de Segurança para a VLAN DEV
 
-Este bloco cria e aplica uma lista de acesso (ACL) com o objetivo de isolar a rede DEV: permitir que ela acesse o servidor e a internet, mas **impedir que ela inicie comunicação** com a rede ADMIN.
+Este bloco cria e aplica uma lista de acesso (ACL) com o objetivo de isolar a rede DEV: **impedir que ela inicie comunicação** com a rede ADMIN, mas permitir que ela responda a solicitações vindas da ADMIN.
 
 ```bash
 ip access-list extended DEV_SECURITY_POLICY
-    permit tcp 192.168.20.0 0.0.0.255 host 192.168.30.10 eq 80
-    permit tcp 192.168.20.0 0.0.0.255 host 192.168.30.10 eq 443
-    permit tcp 192.168.20.0 0.0.0.255 host 192.168.30.10 eq 22
+    permit icmp 192.168.20.0 0.0.0.255 192.168.10.0 0.0.0.255 echo-reply
+    permit tcp 192.168.20.0 0.0.0.255 192.168.10.0 0.0.0.255 established
     deny   ip 192.168.20.0 0.0.0.255 192.168.10.0 0.0.0.255
     permit ip any any
 exit
@@ -548,11 +527,13 @@ exit
 
   * `ip access-list extended DEV_SECURITY_POLICY`: Cria uma Access Control List (ACL) nomeada e do tipo estendida, que permite filtrar tráfego com base em múltiplos critérios (protocolo, origem, destino, portas).
 
-  * `permit tcp ... eq <porta>`: Permite que a rede DEV (`192.168.20.0/24`) acesse o servidor (`192.168.30.10`) em portas específicas (HTTP, HTTPS, SSH).
+  * `permit ... echo-reply`: Permite que a rede DEV responda a pings (ICMP) que foram iniciados pela rede ADMIN.
 
-  * `deny ip 192.168.20.0 0.0.0.255 192.168.10.0 0.0.0.255`: Esta é a regra de segurança principal. Ela **nega** qualquer tráfego IP que se origine na rede DEV e tenha como destino a rede ADMIN. Isso impede que um desenvolvedor tente acessar um computador da administração, por exemplo.
+  * `permit ... established`: Permite o tráfego de retorno de conexões TCP que foram iniciadas a partir da rede ADMIN. É o que permite que a comunicação funcione nos dois sentidos, desde que a ADMIN inicie.
 
-  * `permit ip any any`: Esta regra é crucial. Após negar o acesso à rede ADMIN, ela **permite todo o resto do tráfego**. Sem esta linha, a "negação implícita" no final da ACL bloquearia o acesso da VLAN DEV ao servidor e à internet.
+  * `deny ip 192.168.20.0 0.0.0.255 192.168.10.0 0.0.0.255`: Esta é a regra de segurança principal. Ela **nega** qualquer tráfego IP novo que se origine na rede DEV e tenha como destino a rede ADMIN.
+
+  * `permit ip any any`: Esta regra é crucial. Após negar o início de comunicação com a rede ADMIN, ela **permite todo o resto do tráfego**. Sem esta linha, a "negação implícita" no final da ACL bloquearia o acesso da VLAN DEV à internet e a qualquer outro recurso permitido.
 
   * `ip access-group DEV_SECURITY_POLICY in`: Aplica a ACL à sub-interface da VLAN 20 na direção de entrada (`in`). Isso significa que o tráfego é filtrado assim que chega ao roteador vindo da rede DEV, o que é a prática mais eficiente.
 
@@ -636,8 +617,9 @@ vlan 30
     name SERVER
 vlan 99
     name NATIVE_TRUNK
+exit
 
-interface GigabitEthernet0/0
+interface GigabitEthernet0/1
     switchport mode trunk
     switchport trunk native vlan 99
     no shutdown
@@ -663,13 +645,6 @@ interface FastEthernet0/21
     spanning-tree portfast
     no shutdown
 exit
-
-interface Vlan10
-    ip address 192.168.10.2 255.255.255.0
-    no shutdown
-exit
-
-ip default-gateway 192.168.10.1
 
 end
 write memory
@@ -729,10 +704,9 @@ ip dhcp pool VLAN20_DEV
 exit
 
 ip access-list extended DEV_SECURITY_POLICY
-    permit tcp 192.168.20.0 0.0.0.255 host 192.168.30.10 eq 80
-    permit tcp 192.168.20.0 0.0.0.255 host 192.168.30.10 eq 443
-    permit tcp 192.168.20.0 0.0.0.255 host 192.168.30.10 eq 22
-    deny   ip 192.168.20.0 0.0.0.255 192.168.10.0 0.0.0.255
+    permit icmp 192.168.20.0 0.0.0.255 192.168.10.0 0.0.0.255 echo-reply
+    permit tcp 192.168.20.0 0.0.0.255 192.168.10.0 0.0.0.255 established
+    deny ip 192.168.20.0 0.0.0.255 192.168.10.0 0.0.0.255
     permit ip any any
 exit
 
