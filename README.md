@@ -118,7 +118,7 @@ A tabela abaixo resume a alocação de endereços para cada segmento da rede.
 | **VLAN 99** | Nativa do Trunk | N/A | N/A | N/A | VLAN de gerenciamento, sem dispositivos de usuário. |
 | **Externa** | Simulação de Internet | `203.0.113.0/24` | `203.0.113.1` | Estático | Usada para conectar o roteador a um servidor externo. |
 
-### **Dispositivos da Rede**
+### Dispositivos da Rede
 
 Esta seção detalha todos os equipamentos utilizados na topologia da DevHub, incluindo os dispositivos de infraestrutura (roteador e switch) e os dispositivos finais (servidores e computadores dos usuários).
 
@@ -186,26 +186,162 @@ A tabela a seguir resume as características dos computadores e servidores conec
 | **Servidor Interno** | VLAN 30 (Server) | `192.168.30.10` | `192.168.30.1` | Estático |
 | **Servidor Externo**| Externa (Internet)| `203.0.113.10` | `203.0.113.1` | Estático |
 
+### Observação Importante: Prática Recomendada para a Configuração
+
+Para garantir a máxima segurança e eficiência da sua infraestrutura, é altamente recomendável que ambas as etapas de configuração — **Segurança** e **Funcional**  — sejam aplicadas em uma **única sessão contínua** para cada dispositivo.
+
+**Motivo:**
+
+Aplicar e salvar as configurações em momentos distintos cria uma janela de vulnerabilidade. Se um dispositivo for reiniciado após receber a configuração funcional, mas antes das medidas de segurança serem implementadas, ele estará online e operando sem as proteções essenciais (senhas, segurança de portas, etc.). Isso deixaria sua rede exposta a acessos não autorizados.
+
+Portanto, a prática mais segura é inserir todos os comandos de uma só vez e executar o comando `write memory` apenas uma vez, ao final de todo o processo. Isso garante que seus dispositivos nunca estarão em um estado funcional sem estarem devidamente protegidos.
+
+### Medidas de Segurança de Infraestrutura
+
+A segurança da rede começa com a proteção dos seus componentes de infraestrutura. Tanto o roteador quanto o switch são pontos críticos que devem ser "endurecidos" (hardening) para prevenir acessos não autorizados e proteger a integridade da rede. Esta seção detalha as configurações de segurança de linha de base aplicadas ao roteador **Cisco 2911** e ao switch **Cisco 2960**.
+
+#### 1. Proteção de Acesso ao Modo Privilegiado (Enable)
+
+A medida mais crítica é proteger o acesso administrativo (modo `enable`), que concede permissões para alterar a configuração dos dispositivos. O comando `enable secret` é usado em ambos os equipamentos por sua criptografia forte.
+
+  * **Aplicado em:** Roteador e Switch.
+  * **Comando:** `enable secret <senha-forte>`
+
+#### 2. Proteção de Acesso Físico (Porta Console)
+
+Para impedir que qualquer pessoa com acesso físico aos equipamentos possa conectá-los e reconfigurá-los, a porta de console de ambos os dispositivos é protegida por senha.
+
+  * **Aplicado em:** Roteador e Switch.
+  * **Comandos:**
+
+    ```bash
+    line console 0
+        password <senha-de-console>
+        login
+    ```
+
+#### 3. Proteção de Acesso Remoto (Linhas VTY)
+
+O acesso remoto via Telnet/SSH é protegido por senhas nas linhas virtuais (VTY). A configuração no switch requer um passo adicional para atribuir um IP de gerenciamento.
+
+  * **Aplicado em:** Roteador e Switch.
+      * **No Roteador:** A configuração é direta, pois ele já possui IPs nas suas interfaces.
+      * **No Switch:** É necessário criar uma Interface Virtual de Switch (SVI) na VLAN de gerenciamento (VLAN 10) e definir um gateway padrão.
+
+#### 4. Criptografia de Senhas em Texto Plano
+
+Para evitar que as senhas de console e VTY fiquem visíveis nos arquivos de configuração, o serviço de criptografia de senhas é ativado em ambos os dispositivos.
+
+  * **Aplicado em:** Roteador e Switch.
+  * **Comando:** `service password-encryption`
+
+#### 5. Segurança Física das Portas (Switch)
+
+Uma medida de segurança fundamental no switch é desativar todas as portas que não estão em uso para impedir que dispositivos não autorizados sejam conectados à rede.
+
+  * **Aplicado em:** Switch.
+  * **Comando:** `interface range <intervalo-de-portas> shutdown`
+
+-----
+
+### Configurações de Segurança Consolidadas
+
+Abaixo estão os blocos de código completos que implementam todas as medidas de segurança para cada dispositivo.
+
+#### Configuração de Segurança - Switch (Cisco 2960)
+
+```bash
+enable
+configure terminal
+
+enable secret DevHubSwitchAdmin2025!
+
+line console 0
+    password consoleaccessswitch
+    login
+exit
+
+line vty 0 15
+    password remoteaccessswitch
+    login
+exit
+
+service password-encryption
+
+interface range FastEthernet0/22-24
+    shutdown
+exit
+
+banner motd # ACESSO RESTRITO A PESSOAL AUTORIZADO #
+
+end
+write memory
+```
+
+#### Configuração de Segurança - Roteador (Cisco 2911)
+
+```bash
+enable
+configure terminal
+
+enable secret DevHubRouterAdmin2025!
+
+line console 0
+    password consoleaccesspass
+    login
+exit
+
+line vty 0 4
+    password remoteaccesspass
+    login
+exit
+
+service password-encryption
+
+banner motd # ACESSO RESTRITO A PESSOAL AUTORIZADO #
+
+end
+write memory
+```
+
 ## Configuração dos dispositivos
 
-### **Configuração do Switch**
+### Configuração do Switch
 
-#### **0. Iniciar a Configuração**
+#### 0. Iniciar a Configuração
 
-Para começar a configuração do Switch você deve entrar no CLI do mesmo e utilizar o comando de habilitação e configuração.
+Para começar a configuração do Switch, você deve entrar na CLI (Interface de Linha de Comando) do mesmo e utilizar os comandos de habilitação e configuração.
 
 ```bash
 enable
 configure terminal
 ```
 
-* `enable`: Entra no modo EXEC Privilegiado, que concede permissões para executar comandos de visualização e configuração.
+  * `enable`: Entra no modo EXEC Privilegiado (indicado pelo `#` ao final do nome do dispositivo, ex: `Switch#`). Este modo concede permissões para executar comandos de visualização e verificação, além de permitir o acesso ao modo de configuração global.
 
-* `configure terminal`: Entra no modo de Configuração Global, onde as alterações na configuração do dispositivo são feitas.
+  * `configure terminal`: Entra no modo de Configuração Global (indicado por `(config)#`, ex: `Switch(config)#`). É a partir deste modo que todas as alterações na configuração do dispositivo são feitas. As configurações aplicadas aqui ficam na configuração em execução (running-config).
 
-#### **1. Configuração do Link com o Roteador (Trunk)**
+#### 1. Criação das VLAN's
 
-Este bloco configura a porta `GigabitEthernet0/0` para operar como um link "trunk", permitindo que o tráfego de múltiplas VLANs passe por ela.
+Neste passo, criamos as Redes Locais Virtuais (VLANs) para segmentar a rede. Cada VLAN funciona como uma rede de broadcast separada.
+
+```bash
+vlan 10
+    name ADMIN
+vlan 20
+    name DEV
+vlan 30
+    name SERVER
+vlan 99
+    name NATIVE_TRUNK
+```
+
+  * `vlan <ID>`: Este comando cria uma VLAN com o número de identificação especificado. Se a VLAN já existir, o comando acessa o modo de configuração dessa VLAN (indicado por `(config-vlan)#`). Neste caso, criamos as VLANs 10, 20, 30 e 99.
+  * `name <NOME>`: Atribui um nome descritivo à VLAN que está sendo configurada. Isso facilita a identificação e o gerenciamento da rede (ex: "ADMIN" para a VLAN 10).
+
+#### 2. Configuração do Link com o Roteador (Trunk)
+
+Este bloco configura a porta `GigabitEthernet0/0` para operar como um link "trunk", permitindo que o tráfego de múltiplas VLANs passe por ela em direção ao roteador.
 
 ```bash
 interface GigabitEthernet0/0
@@ -215,15 +351,15 @@ interface GigabitEthernet0/0
 exit
 ```
 
-* `interface GigabitEthernet0/0`: Acessa o modo de configuração específico para a interface física `GigabitEthernet0/0`.
+  * `interface GigabitEthernet0/0`: Acessa o modo de configuração específico para a interface física `GigabitEthernet0/0`.
 
-* `switchport mode trunk`: Define a porta para operar permanentemente em modo "trunk". Isso a capacita a transportar tráfego de múltiplas VLANs simultaneamente, usando o protocolo de encapsulamento 802.1Q para identificar a qual VLAN cada quadro pertence.
+  * `switchport mode trunk`: Define a porta para operar permanentemente em modo "trunk". Isso a capacita a transportar tráfego de múltiplas VLANs simultaneamente, usando o protocolo de encapsulamento 802.1Q para identificar a qual VLAN cada quadro pertence.
 
-* `switchport trunk native vlan 99`: Configura a VLAN nativa do trunk para a VLAN 99. Qualquer tráfego que cruze o trunk sem uma etiqueta 802.1Q (untagged) será automaticamente assumido como pertencente à VLAN 99. É uma prática de segurança para evitar que o tráfego de gerenciamento padrão (VLAN 1) seja exposto.
+  * `switchport trunk native vlan 99`: Configura a VLAN nativa do trunk para a VLAN 99. Qualquer tráfego que cruze o trunk sem uma etiqueta 802.1Q (untagged) será automaticamente assumido como pertencente à VLAN 99. É uma prática de segurança recomendada alterar a VLAN nativa da padrão (VLAN 1) para uma VLAN não utilizada por dispositivos de usuário.
 
-* `no shutdown`: Ativa administrativamente a interface, permitindo que ela envie e receba tráfego.
+  * `no shutdown`: Ativa administrativamente a interface, permitindo que ela envie e receba tráfego.
 
-#### **2. Atribuição de Portas para a VLAN ADMIN**
+#### 3. Atribuição de Portas para a VLAN ADMIN
 
 Este bloco atribui as portas de `FastEthernet0/1` a `0/10` para a **VLAN 10 (ADMIN)**, colocando os dispositivos conectados nelas nessa rede.
 
@@ -236,15 +372,15 @@ interface range FastEthernet0/1 - 10
 exit
 ```
 
-* `interface range FastEthernet0/1 - 10`: Acessa o modo de configuração para um intervalo de interfaces (de 1 a 10), permitindo aplicar os mesmos comandos a todas elas de uma só vez.
+  * `interface range FastEthernet0/1 - 10`: Acessa o modo de configuração para um intervalo de interfaces (de 1 a 10), permitindo aplicar os mesmos comandos a todas elas de uma só vez.
 
-* `switchport mode access`: Define as portas para operarem em modo "access". Neste modo, uma porta pertence a uma única VLAN e não processa quadros com etiquetas 802.1Q. É o modo padrão para conectar dispositivos finais como PCs e servidores.
+  * `switchport mode access`: Define as portas para operarem em modo "access". Neste modo, uma porta pertence a uma única VLAN e não processa quadros com etiquetas 802.1Q. É o modo padrão para conectar dispositivos finais como PCs, impressoras e servidores.
 
-* `switchport access vlan 10`: Associa estaticamente as portas à VLAN 10. Qualquer dispositivo conectado a estas portas se tornará um membro da VLAN 10.
+  * `switchport access vlan 10`: Associa estaticamente as portas à VLAN 10. Qualquer dispositivo conectado a estas portas se tornará um membro da VLAN 10.
 
-* `spanning-tree portfast`: Habilita o PortFast na interface. Este comando faz com que a porta pule os estados de "escuta" e "aprendizagem" do Spanning Tree Protocol (STP), permitindo que ela transite imediatamente para o estado de "encaminhamento". Isso evita que dispositivos finais (como PCs que usam DHCP) tenham problemas de timeout ao obter um IP quando conectados.
+  * `spanning-tree portfast`: Habilita o PortFast na interface. Este comando faz com que a porta pule os estados de "escuta" e "aprendizagem" do Spanning Tree Protocol (STP), permitindo que ela transite imediatamente para o estado de "encaminhamento". Isso evita que dispositivos finais (como PCs que usam DHCP) tenham problemas de timeout ao obter um endereço IP quando conectados. **Atenção:** só deve ser usado em portas de acesso conectadas a dispositivos finais.
 
-#### **3. Atribuição de Portas para a VLAN DEV**
+#### 4. Atribuição de Portas para a VLAN DEV
 
 Este bloco atribui as portas de `FastEthernet0/11` a `0/20` para a **VLAN 20 (DEV)**.
 
@@ -257,9 +393,9 @@ interface range FastEthernet0/11 - 20
 exit
 ```
 
-* Mesma lógica do bloco anterior, porém com os respectivos valores e intervalos alterados
+  * A lógica é idêntica à da seção anterior, mas aplicada a um novo intervalo de portas (`11-20`) e associando-as à VLAN 20.
 
-#### **4. Atribuição de Porta para a VLAN SERVER**
+#### 5. Atribuição de Porta para a VLAN SERVER
 
 Este bloco atribui a porta `FastEthernet0/21` para a **VLAN 30 (SERVER)**.
 
@@ -272,38 +408,62 @@ interface FastEthernet0/21
 exit
 ```
 
-* Mesma lógica do bloco anterior, porém com os respectivos valores e intervalos alterados
+  * A lógica é a mesma, mas aplicada a uma única porta (`FastEthernet0/21`) e associando-a à VLAN 30.
 
-#### **5. Finalizar a Configuração**
+#### 6. Configuração da Interface de Gerenciamento do Switch
 
-Para finalizar a configuração basta usar o comando `end` do bloco abaixo.
+Este bloco de comandos configura o switch para ser gerenciável remotamente através da rede. Ao criar uma interface virtual (SVI) na VLAN de administração e definir um gateway, o switch ganha um endereço IP e se torna um dispositivo acessível via Telnet/SSH, permitindo que administradores configurem e monitorem o equipamento sem a necessidade de acesso físico com um cabo de console.
+
+```bash
+interface Vlan10
+    ip address 192.168.10.2 255.255.255.0
+    no shutdown
+exit
+
+ip default-gateway 192.168.10.1
+```
+
+  * `interface Vlan10`: Cria uma Interface Virtual de Switch (SVI), que é uma interface lógica que representa a VLAN 10 dentro do próprio switch. É através desta SVI que o switch pode enviar e receber tráfego IP.
+
+  * `ip address 192.168.10.2 255.255.255.0`: Atribui um endereço IP estático à SVI da VLAN 10. Este endereço torna o switch um "host" na rede de administração, permitindo que seja acessado para gerenciamento.
+
+  * `no shutdown`: Ativa administrativamente a interface virtual Vlan10.
+
+  * `ip default-gateway 192.168.10.1`: Define o gateway padrão para o switch. Como um switch Layer 2 não roteia pacotes, este comando é crucial para que ele saiba para onde enviar tráfego destinado a redes externas (por exemplo, para um administrador em outra VLAN que precise gerenciar o switch, ou para que o switch acesse um servidor NTP/Syslog).
+
+#### 7. Finalizar e Salvar a Configuração
+
+Para finalizar e garantir que as configurações sejam mantidas após uma reinicialização, utilize os comandos abaixo.
 
 ```bash
 end
+write memory
 ```
 
-* `end`: Sai do modo de configuração e retorna ao modo EXEC Privilegiado.
+  * `end`: Sai do modo de configuração e retorna ao modo EXEC Privilegiado (`Switch#`).
+
+  * `write memory`: Grava a configuração em execução (running-config) na memória não volátil (NVRAM) como a configuração de inicialização (startup-config). É este comando que garante que as configurações feitas sejam mantidas mesmo após o dispositivo ser desligado ou reiniciado. Um comando alternativo e mais moderno é o `copy running-config startup-config`.
 
 -----
 
-### **Configuração do Roteador**
+### Configuração do Roteador
 
-#### **0. Iniciar a Configuração**
+#### 0. Iniciar a Configuração
 
-Para começar a configuração do Router você deve entrar no CLI do mesmo e utilizar o comando de habilitação e configuração.
+Para começar a configuração do Roteador, você deve entrar na CLI do mesmo e utilizar o comando de habilitação e configuração.
 
 ```bash
 enable
 configure terminal
 ```
 
-* `enable`: Entra no modo EXEC Privilegiado, que concede permissões para executar comandos de visualização e configuração.
+  * `enable`: Entra no modo EXEC Privilegiado, que concede permissões para executar comandos de visualização e configuração.
 
-* `configure terminal`: Entra no modo de Configuração Global, onde as alterações na configuração do dispositivo são feitas.
+  * `configure terminal`: Entra no modo de Configuração Global, onde as alterações na configuração do dispositivo são feitas.
 
-#### **1. Criação dos Gateways para as VLANs**
+#### 1. Criação dos Gateways para as VLANs (Router-on-a-Stick)
 
-Este bloco cria as sub-interfaces virtuais que servirão como gateway padrão para cada VLAN, permitindo a comunicação entre elas.
+Este bloco cria as sub-interfaces virtuais que servirão como gateway padrão para cada VLAN, permitindo a comunicação entre elas (roteamento inter-VLAN).
 
 ```bash
 interface GigabitEthernet0/0
@@ -326,19 +486,19 @@ interface GigabitEthernet0/0.30
 exit
 ```
 
-* `interface GigabitEthernet0/0`: Acessa a interface física principal que se conecta ao switch. Em uma configuração "Router-on-a-Stick", esta interface não recebe um endereço IP.
+  * `interface GigabitEthernet0/0`: Acessa a interface física principal que se conecta ao switch (link trunk). Em uma configuração "Router-on-a-Stick", esta interface não recebe um endereço IP diretamente.
 
-* `no shutdown`: Ativa a interface física. As sub-interfaces virtuais só funcionarão se a interface física principal estiver ativa.
+  * `no shutdown`: Ativa a interface física. As sub-interfaces virtuais só funcionarão se a interface física principal estiver ativa.
 
-* `interface GigabitEthernet0/0.10`: Cria uma sub-interface lógica (virtual) associada à interface física `Gi0/0`. O número `.10` é arbitrário, mas por convenção, corresponde ao ID da VLAN que ela servirá. O mesmo vale para as demais linhas semelhantes a essa, porém com seus respectivos valores.
+  * `interface GigabitEthernet0/0.10`: Cria uma sub-interface lógica (virtual) associada à interface física `Gi0/0`. O número `.10` é arbitrário, mas por convenção, corresponde ao ID da VLAN que ela servirá.
 
-* `encapsulation dot1Q 10`: Habilita o encapsulamento 802.1Q na sub-interface e a associa à VLAN de ID 10. Isso diz ao roteador para processar quadros que chegam com a etiqueta da VLAN 10. O mesmo vale para as demais linhas semelhantes a essa, porém com seus respectivos valores.
+  * `encapsulation dot1Q 10`: Habilita o encapsulamento 802.1Q na sub-interface e a associa à VLAN de ID 10. Isso diz ao roteador para aceitar e processar quadros que chegam com a etiqueta (tag) da VLAN 10.
 
-* `ip address 192.168.10.1 255.255.255.0`: Atribui um endereço IP e máscara de sub-rede à sub-interface, estabelecendo-a como o gateway padrão para todos os dispositivos na VLAN 10. O mesmo vale para as demais linhas semelhantes a essa, porém com seus respectivos valores.
+  * `ip address 192.168.10.1 255.255.255.0`: Atribui um endereço IP e máscara de sub-rede à sub-interface, estabelecendo-a como o gateway padrão para todos os dispositivos na VLAN 10.
 
-#### **2. Configuração do Servidor DHCP**
+#### 2. Configuração do Servidor DHCP
 
-Este bloco configura o roteador para distribuir endereços IP automaticamente para as VLANs ADMIN e DEV, reservando os primeiros IPs de cada rede.
+Este bloco configura o roteador para atuar como um servidor DHCP, distribuindo endereços IP automaticamente para as VLANs ADMIN e DEV. A VLAN SERVER é omitida intencionalmente, pois servidores devem ter endereços IP estáticos.
 
 ```bash
 ip dhcp excluded-address 192.168.10.1 192.168.10.9
@@ -346,9 +506,9 @@ ip dhcp excluded-address 192.168.20.1 192.168.20.9
 ip dhcp excluded-address 192.168.30.1 192.168.30.10
 
 ip dhcp pool VLAN10_ADMIN
-   network 192.168.10.0 255.255.255.0
-   default-router 192.168.10.1
-   dns-server 8.8.8.8
+    network 192.168.10.0 255.255.255.0
+    default-router 192.168.10.1
+    dns-server 8.8.8.8
 exit
 
 ip dhcp pool VLAN20_DEV
@@ -358,24 +518,22 @@ ip dhcp pool VLAN20_DEV
 exit
 ```
 
-* `ip dhcp excluded-address ...`: Reserva um intervalo de endereços IP, instruindo o serviço DHCP a nunca distribuí-los automaticamente. Isso é usado para reservar IPs para gateways, servidores e outros dispositivos de infraestrutura com IPs estáticos.
+  * `ip dhcp excluded-address ...`: Reserva um intervalo de endereços IP, instruindo o serviço DHCP a nunca distribuí-los automaticamente. Isso é fundamental para evitar conflitos de IP com gateways, servidores e outros dispositivos de infraestrutura com IPs estáticos.
 
-* `ip dhcp pool VLAN10_ADMIN`: Cria um conjunto de configurações DHCP (pool) com um nome descritivo. Mesma lógica se aplica à outra linha semelhante
+  * `ip dhcp pool VLAN10_ADMIN`: Cria um conjunto de configurações DHCP (pool) com um nome descritivo.
 
-* `network 192.168.10.0 255.255.255.0`: Define a sub-rede da qual o pool DHCP distribuirá endereços IP. Mesma lógica se aplica à outra linha semelhante
+  * `network 192.168.10.0 255.255.255.0`: Define a sub-rede (endereço de rede e máscara) da qual o pool DHCP distribuirá endereços IP.
 
-* `default-router 192.168.10.1`: Especifica o endereço do gateway padrão que será fornecido aos clientes DHCP. Mesma lógica se aplica à outra linha semelhante
+  * `default-router 192.168.10.1`: Especifica o endereço do gateway padrão que será fornecido aos clientes DHCP.
 
-* `dns-server 8.8.8.8`: Especifica o endereço do servidor DNS que será fornecido aos clientes.
+  * `dns-server 8.8.8.8`: Especifica o endereço do servidor DNS que será fornecido aos clientes.
 
-#### **3. Firewall de Segurança para a VLAN DEV**
+#### 3. Firewall de Segurança para a VLAN DEV
 
-Este bloco cria e aplica uma lista de acesso (ACL) que permite à VLAN DEV acessar o servidor e a internet, mas a proíbe de se comunicar com a VLAN ADMIN.
+Este bloco cria e aplica uma lista de acesso (ACL) com o objetivo de isolar a rede DEV: permitir que ela acesse o servidor e a internet, mas **impedir que ela inicie comunicação** com a rede ADMIN.
 
 ```bash
 ip access-list extended DEV_SECURITY_POLICY
-    permit icmp 192.168.20.0 0.0.0.255 192.168.10.0 0.0.0.255 echo-reply
-    permit tcp 192.168.20.0 0.0.0.255 192.168.10.0 0.0.0.255 established
     permit tcp 192.168.20.0 0.0.0.255 host 192.168.30.10 eq 80
     permit tcp 192.168.20.0 0.0.0.255 host 192.168.30.10 eq 443
     permit tcp 192.168.20.0 0.0.0.255 host 192.168.30.10 eq 22
@@ -388,24 +546,19 @@ interface GigabitEthernet0/0.20
 exit
 ```
 
-* `ip access-list extended DEV_SECURITY_POLICY`: Cria uma Access Control List (ACL) nomeada e do tipo estendida, que permite filtrar tráfego com base no protocolo, endereços de origem e destino, e portas.
+  * `ip access-list extended DEV_SECURITY_POLICY`: Cria uma Access Control List (ACL) nomeada e do tipo estendida, que permite filtrar tráfego com base em múltiplos critérios (protocolo, origem, destino, portas).
 
-* `permit icmp ... echo-reply`: Permite que a rede DEV envie respostas de ping (ICMP echo-reply) para a rede ADMIN. Isso é necessário para que um ping iniciado pelo ADMIN funcione.
+  * `permit tcp ... eq <porta>`: Permite que a rede DEV (`192.168.20.0/24`) acesse o servidor (`192.168.30.10`) em portas específicas (HTTP, HTTPS, SSH).
 
-* `permit tcp ... established`: É uma regra de ACL reflexiva. Ela permite o tráfego de retorno de uma sessão TCP que já foi estabelecida. Essencialmente, se um ADMIN inicia uma conexão com um DEV, esta regra permite que o DEV responda.
+  * `deny ip 192.168.20.0 0.0.0.255 192.168.10.0 0.0.0.255`: Esta é a regra de segurança principal. Ela **nega** qualquer tráfego IP que se origine na rede DEV e tenha como destino a rede ADMIN. Isso impede que um desenvolvedor tente acessar um computador da administração, por exemplo.
 
-* `deny ip 192.168.20.0 0.0.0.255 192.168.10.0 0.0.0.255`: Esta é a regra de segurança explícita que **nega** qualquer tipo de tráfego IP (`ip`) que venha da rede de desenvolvedores (`192.168.20.0`) e tente uma conexão com a rede de administradores (`192.168.10.0`).
+  * `permit ip any any`: Esta regra é crucial. Após negar o acesso à rede ADMIN, ela **permite todo o resto do tráfego**. Sem esta linha, a "negação implícita" no final da ACL bloquearia o acesso da VLAN DEV ao servidor e à internet.
 
-* `permit ip any any`: Permite todo o resto do tráfego. Sem esta linha, a "negação implícita" no final de toda ACL bloquearia qualquer outro tráfego (como o acesso à internet).
+  * `ip access-group DEV_SECURITY_POLICY in`: Aplica a ACL à sub-interface da VLAN 20 na direção de entrada (`in`). Isso significa que o tráfego é filtrado assim que chega ao roteador vindo da rede DEV, o que é a prática mais eficiente.
 
-* `ip access-group DEV_SECURITY_POLICY in`: Aplica a ACL à sub-interface da VLAN 20 na direção de entrada (`in`). Isso significa que o tráfego será filtrado no momento em que ele chega ao roteador vindo da rede DEV.
+#### 4. Firewall de Saída e NAT para a Internet
 
-#### **4. Firewall de Saída e NAT para a Internet**
-
-Este bloco de código é responsável por configurar como a rede interna da DevHub acessa a rede externa (a "internet" simulada). Ele realiza duas funções críticas:
-
-1.  **NAT (Network Address Translation):** Traduz os endereços IP privados das VLANs de Administração e Desenvolvimento em um único endereço IP "público", permitindo que eles se comuniquem com o exterior.
-2.  **Firewall:** Cria e aplica uma lista de acesso (ACL) para garantir que apenas o tráfego autorizado (das VLANs ADMIN e DEV) possa sair para a internet, bloqueando explicitamente a VLAN do Servidor.
+Este bloco configura o NAT (Network Address Translation) para permitir que as redes internas acessem a internet usando um único IP público e, ao mesmo tempo, cria um firewall para impedir que a VLAN de servidores acesse a internet.
 
 ```bash
 interface GigabitEthernet0/1
@@ -439,46 +592,171 @@ interface GigabitEthernet0/1
 exit
 ```
 
-  * `interface GigabitEthernet0/1`: Acessa o modo de configuração da interface física que se conecta à rede externa (WAN).
+  * `ip nat outside`: Designa a interface `Gi0/1` como a "fronteira externa" da sua rede para o serviço de NAT.
 
-  * `ip address 203.0.113.1 255.255.255.0`: Define um endereço IP estático para a interface externa. Este será o endereço "público" que representará toda a sua rede interna na comunicação com servidores externos.
+  * `ip nat inside`: Designa as sub-interfaces `Gi0/0.10` e `Gi0/0.20` como a "fronteira interna".
 
-  * `ip nat outside`: Comando crucial que designa esta interface como a "fronteira externa" da sua rede para o serviço de NAT.
+  * `ip access-list standard NAT_ACL`: Cria uma ACL standard que especifica quais redes internas têm permissão para serem traduzidas pelo NAT. Note que a rede de servidores (VLAN 30) foi intencionalmente omitida.
 
-  * `ip access-list standard NAT_ACL`: Cria uma Lista de Acesso (ACL) do tipo *standard* chamada `NAT_ACL`. ACLs do tipo standard filtram o tráfego baseando-se unicamente no endereço IP de **origem**.
+  * `ip nat inside source list NAT_ACL interface GigabitEthernet0/1 overload`: Este comando ativa o NAT. Ele instrui o roteador a traduzir o IP de origem de todo o tráfego permitido pela `NAT_ACL`, usando o endereço IP da interface `Gi0/1` e habilitando o `overload` (PAT) para que múltiplos dispositivos compartilhem o mesmo IP público.
 
-  * `permit 192.168.10.0 0.0.0.255`: Dentro da `NAT_ACL`, esta linha permite que qualquer tráfego originado da rede da VLAN ADMIN (`192.168.10.0/24`) seja candidato a passar pelo processo de NAT. O mesmo se aplica à linha seguinte para a VLAN DEV (`192.168.20.0/24`). Note que a rede de servidores (`192.168.30.0/24`) **não** foi incluída, sendo este o primeiro passo para impedir seu acesso à internet.
+  * `ip access-list extended ACL_INTERNET_OUT`: Cria uma ACL estendida para atuar como um firewall de saída.
 
-  * `ip nat inside source list NAT_ACL interface GigabitEthernet0/1 overload`: Este é o comando central que ativa o NAT.
+  * `deny ip 192.168.30.0 0.0.0.255 any`: Nega explicitamente qualquer tráfego da rede de servidores para qualquer destino externo.
 
-      * `ip nat inside source`: Instruí o roteador a traduzir o IP de origem do tráfego que vem de dentro (`inside`).
-      * `list NAT_ACL`: Especifica que apenas o tráfego permitido pela ACL `NAT_ACL` deve ser traduzido.
-      * `interface GigabitEthernet0/1`: Define que o endereço IP a ser usado na tradução é o da interface `GigabitEthernet0/1` (`203.0.113.1`).
-      * `overload`: Habilita o **PAT (Port Address Translation)**, permitindo que múltiplos dispositivos internos compartilhem o único IP público da `GigabitEthernet0/1` simultaneamente.
+  * `permit ip any any`: Permite todo o outro tráfego (ou seja, das VLANs 10 e 20) que passe por esta interface.
 
-  * `ip nat inside`: Aplicado dentro das sub-interfaces das VLANs ADMIN (`Gi0/0.10`) e DEV (`Gi0/0.20`), este comando as designa como interfaces "internas". Qualquer tráfego que se origine nelas e vá para uma interface `ip nat outside` será processado pela regra de NAT.
+  * `ip access-group ACL_INTERNET_OUT out`: Aplica a ACL de firewall na interface externa na direção de saída (`out`), filtrando o tráfego que está prestes a sair para a internet.
 
-  * `ip access-list extended ACL_INTERNET_OUT`: Cria uma ACL do tipo *extended* chamada `ACL_INTERNET_OUT`. ACLs do tipo extended são mais poderosas, permitindo filtrar o tráfego com base na origem, destino, protocolo e portas.
+#### 5. Finalizar a Configuração
 
-  * `deny ip 192.168.30.0 0.0.0.255 any`: Esta é a regra de segurança explícita que **nega** qualquer tipo de tráfego IP (`ip`) que venha da rede de servidores (`192.168.30.0/24`) e tente ir para **qualquer** destino (`any`).
-
-  * `permit ip any any`: Após a regra de negação, esta linha é fundamental para **permitir** todo o restante do tráfego (ou seja, o tráfego das VLANs ADMIN e DEV que já passaram pelo filtro do NAT). Sem ela, todo o tráfego seria bloqueado pela regra invisível de "negação implícita" que existe no final de toda ACL.
-
-  * `ip access-group ACL_INTERNET_OUT out`: Aplica a ACL `ACL_INTERNET_OUT` à interface `GigabitEthernet0/1` na direção de **saída** (`out`). Isso significa que as regras da ACL serão verificadas para cada pacote que estiver prestes a sair do roteador em direção à internet.
-
-#### **5. Finalizar a Configuração**
-
-Para finalizar a configuração basta usar o comando `end` do bloco abaixo.
+Para finalizar a configuração, saia do modo de configuração e salve as alterações na memória permanente.
 
 ```bash
 end
+write memory
 ```
 
-* `end`: Sai do modo de configuração e retorna ao modo EXEC Privilegiado.
+  * `end`: Sai do modo de configuração e retorna ao modo EXEC Privilegiado.
+  * `write memory`: Salva a configuração em execução (running-config) na configuração de inicialização (startup-config), garantindo que as alterações persistam após uma reinicialização.
+
+### Configuração dos Dispositivos Consolidada
+
+#### Configuração do Switch
+
+```bash
+enable
+configure terminal
+
+vlan 10
+    name ADMIN
+vlan 20
+    name DEV
+vlan 30
+    name SERVER
+vlan 99
+    name NATIVE_TRUNK
+
+interface GigabitEthernet0/0
+    switchport mode trunk
+    switchport trunk native vlan 99
+    no shutdown
+exit
+
+interface range FastEthernet0/1 - 10
+    switchport mode access
+    switchport access vlan 10
+    spanning-tree portfast
+    no shutdown
+exit
+
+interface range FastEthernet0/11 - 20
+    switchport mode access
+    switchport access vlan 20
+    spanning-tree portfast
+    no shutdown
+exit
+
+interface FastEthernet0/21
+    switchport mode access
+    switchport access vlan 30
+    spanning-tree portfast
+    no shutdown
+exit
+
+interface Vlan10
+    ip address 192.168.10.2 255.255.255.0
+    no shutdown
+exit
+
+ip default-gateway 192.168.10.1
+
+end
+write memory
+```
+
+-----
+
+#### Configuração do Roteador
+
+```bash
+enable
+configure terminal
+
+interface GigabitEthernet0/0
+    no shutdown
+exit
+
+interface GigabitEthernet0/0.10
+    encapsulation dot1Q 10
+    ip address 192.168.10.1 255.255.255.0
+    ip nat inside
+exit
+
+interface GigabitEthernet0/0.20
+    encapsulation dot1Q 20
+    ip address 192.168.20.1 255.255.255.0
+    ip nat inside
+    ip access-group DEV_SECURITY_POLICY in
+exit
+
+interface GigabitEthernet0/0.30
+    encapsulation dot1Q 30
+    ip address 192.168.30.1 255.255.255.0
+exit
+
+interface GigabitEthernet0/1
+    ip address 203.0.113.1 255.255.255.0
+    ip nat outside
+    ip access-group ACL_INTERNET_OUT out
+    no shutdown
+exit
+
+ip dhcp excluded-address 192.168.10.1 192.168.10.9
+ip dhcp excluded-address 192.168.20.1 192.168.20.9
+ip dhcp excluded-address 192.168.30.1 192.168.30.10
+
+ip dhcp pool VLAN10_ADMIN
+    network 192.168.10.0 255.255.255.0
+    default-router 192.168.10.1
+    dns-server 8.8.8.8
+exit
+
+ip dhcp pool VLAN20_DEV
+    network 192.168.20.0 255.255.255.0
+    default-router 192.168.20.1
+    dns-server 8.8.8.8
+exit
+
+ip access-list extended DEV_SECURITY_POLICY
+    permit tcp 192.168.20.0 0.0.0.255 host 192.168.30.10 eq 80
+    permit tcp 192.168.20.0 0.0.0.255 host 192.168.30.10 eq 443
+    permit tcp 192.168.20.0 0.0.0.255 host 192.168.30.10 eq 22
+    deny   ip 192.168.20.0 0.0.0.255 192.168.10.0 0.0.0.255
+    permit ip any any
+exit
+
+ip access-list standard NAT_ACL
+    permit 192.168.10.0 0.0.0.255
+    permit 192.168.20.0 0.0.0.255
+exit
+
+ip access-list extended ACL_INTERNET_OUT
+    deny ip 192.168.30.0 0.0.0.255 any
+    permit ip any any
+exit
+
+ip nat inside source list NAT_ACL interface GigabitEthernet0/1 overload
+
+end
+write memory
+```
 
 ### Plano de Testes e Verificação
 
-Este plano fornece uma série de testes sistemáticos para validar a configuração da rede da DevHub. O objetivo é confirmar que todas as regras de comunicação e políticas de segurança entre as VLANs e o acesso à internet estão funcionando conforme o esperado.
+Este plano fornece uma série de testes sistemáticos para validar a configuração da rede da DevHub. O objetivo é confirmar que todas as regras de comunicação e políticas de segurança entre as VLANs, o acesso à internet e a segurança dos dispositivos estão funcionando conforme o esperado.
+
+#### Testes de Conectividade e Firewall
 
 Os testes devem ser executados a partir de um dispositivo em cada uma das VLANs principais.
 
@@ -517,4 +795,17 @@ O Servidor Interno (`192.168.30.10`) deve poder responder a requisições intern
 | 3.3 | Servidor Interno | Servidor Externo | `ping 203.0.113.10` | **Falha** (Time out) | A regra `deny ip 192.168.30.0 ... any` na ACL `ACL_INTERNET_OUT` bloqueia qualquer tráfego do servidor para a internet. |
 | 3.4 | Servidor Interno | DNS Público | `nslookup google.com` | **Falha** | A mesma regra da `ACL_INTERNET_OUT` também bloqueia requisições DNS para a internet. |
 
-A execução bem-sucedida de todos os testes deste plano confirma que a rede da DevHub está segmentada e protegida de acordo com as políticas estabelecidas.
+#### Testes de Segurança de Acesso à Infraestrutura
+
+Os testes a seguir validam se as senhas de segurança e os banners de aviso foram aplicados corretamente no roteador e no switch. Estes testes requerem acesso físico (cabo de console) e acesso lógico (remoto a partir da VLAN de Administração).
+
+| Nº | Dispositivo Alvo | Método de Acesso | Ação a ser Testada | Resultado Esperado | Justificativa da Regra |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| 4.1 | Roteador & Switch | Conexão de Console | Tentar acessar o CLI. | **Sucesso**, mas para em uma tela de login que pede a senha `consoleaccesspass` ou `consoleaccessswitch`. O banner de aviso é exibido. | Confirma que o acesso físico está protegido. |
+| 4.2 | Roteador & Switch | Acesso via Console | Após o login, executar o comando `enable`. | O dispositivo solicita a senha `enable secret` (`DevHubRouterAdmin2025!` ou `DevHubSwitchAdmin2025!`). | Confirma que o acesso ao modo de configuração está protegido. |
+| 4.3 | Roteador | Acesso Remoto (Telnet) | De um PC-ADMIN (`192.168.10.10`), executar: `telnet 192.168.10.1` | **Sucesso**, mas a conexão para em uma tela de login que pede a senha `remoteaccesspass`. O banner de aviso é exibido. | Confirma que o acesso remoto ao roteador está protegido. |
+| 4.4 | Switch | Acesso Remoto (Telnet) | De um PC-ADMIN (`192.168.10.10`), executar: `telnet 192.168.10.2` | **Sucesso**, mas a conexão para em uma tela de login que pede a senha `remoteaccessswitch`. O banner de aviso é exibido. | Confirma que o acesso remoto ao switch está protegido. |
+| 4.5 | Switch | Acesso Remoto (Telnet) | De um PC-DEV (`192.168.20.10`), executar: `telnet 192.168.10.2` | **Falha** (Time out) | A ACL `DEV_SECURITY_POLICY` impede que a VLAN DEV inicie conexões com a VLAN ADMIN, o que inclui o IP de gerenciamento do switch. |
+| 4.6 | Switch | Conexão Física | Conectar um PC a uma porta desativada (ex: `FastEthernet0/23`). | O link da porta no PC e no switch permanece **desativado/sem luz**. Nenhuma conectividade é estabelecida. | Confirma que a política de desativação de portas não utilizadas está funcionando. |
+
+A execução bem-sucedida de todos os testes deste plano confirma que a rede da DevHub está segmentada, protegida e configurada de acordo com todas as políticas estabelecidas.
