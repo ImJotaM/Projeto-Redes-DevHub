@@ -317,7 +317,10 @@ line console 0
     login
 exit
 
+access-list 10 permit 192.168.10.0 0.0.0.255
+
 line vty 0 4
+    access-class 10 in
     transport input ssh
     login local
 exit
